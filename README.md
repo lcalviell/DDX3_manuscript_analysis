@@ -6,7 +6,7 @@ Part 1 deals with the initial analysis of gene expression changes, while Part 2 
 
 For more questions, please email:
 
-calviello.l.bio@gmail.com (Lorenzo Calviello, data analysis)
-Stephen.floor@gmail.com (Stephen Floor, project supervisor)
-Markus.landthaler@mdc-berlin.de (Markus Landthaler, project supervisor)
+calviello.l.bio@gmail.com (Lorenzo Calviello, data analysis),
+Stephen.floor@gmail.com (Stephen Floor, project supervisor),
+Markus.landthaler@mdc-berlin.de (Markus Landthaler, project supervisor).
 
