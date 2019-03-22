@@ -1,0 +1,4 @@
+category	all_genes	RNA_up	RNA_down	TE_up	TE_down
+Detected genes	12054	617	792	34	249
+DDX3-bound (% of Detected genes)	9443 (78.3%)	522 (84.6%)	519 (65.5%)	32 (94.1%)	219 (88%)
+DDX3-bound, high T>C (% of DDX3-bound)	6827 (72.3%)	380 (72.8%)	375 (72.3%)	24 (75%)	186 (84.9%)
