@@ -19,11 +19,38 @@ load("data/gencode.v25.annotation.gtf_Rannot")
 load("data/res_DE")
 load("data/rRNA_clips")
 load("data/deltaG_average_Robj")
-load("data/POSTAR2_binding_human_Robj")
+df_countsriboclip<-get(load("data/counts_ribornaclip"))
+postarpar<-get(load("data/POSTAR2_binding_human_par_Robj"))
+postareclip<-get(load("data/POSTAR2_binding_human_ecl_Robj"))
+load("data/wavcluster_peaks")
 peaks<-read.table("data/PARAlyzer_clusters.csv",stringsAsFactors = F,sep=",",header = T)
 des_all<-read.table("data/DE_table_ok.csv",sep="\t",header = T,stringsAsFactors = F)
 
+colssi<-c("red","orange","gold","cornflowerblue","blue","dark blue")
 
+parcounts_tpm<-ggplot(df_countsriboclip, aes(tpm_ribo+1, tpm_par+1,  colour=type, fill=type)) +
+    #geom_hex(bins = 50) +
+    geom_point() +
+    geom_smooth(method="lm", show.legend = FALSE) +
+    theme_bw() + 
+    xlab("Ribo-seq TPM") +
+    ylab("PAR-CLIP TPM") +
+    guides(fill = "none") + 
+    scale_y_log10() + 
+    scale_x_log10() +
+    scale_color_manual(values = alpha(c("black","cornflowerblue","orange","blue","dark red"),.7),"Tx_class") +
+    scale_fill_manual(values = alpha(c("black","cornflowerblue","orange","blue","dark red"),.7),"Tx_class") +
+    theme_classic() +
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=0, vjust=0.5, size=13)) +
+    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
+    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white"))
+
+pdf(file = "figures/par_ribotpms.pdf",width = 8,height = 5)
+print(parcounts_tpm)
+dev.off()
+png(filename = "figures/par_ribotpms.png",width = 8,height = 5,units = "in",res = 140)
+print(parcounts_tpm)
+dev.off()
 #pick representative transcripts
 txok<-GTF_annotation$cds_txs_coords
 txok<-txok[txok$reprentative_boundaries]
@@ -87,7 +114,11 @@ dev.off()
 
 #mRNA BINDING
 
-maptx<-mapToTranscripts(peak_gr_ok,transcripts = GTF_annotation$exons_txs[as.vector(seqnames(txok))])
+maptx<-mapToTranscripts(resize(peak_gr_ok,1,fix = "center"),transcripts = GTF_annotation$exons_txs[as.vector(seqnames(txok))])
+strand(maptx)<-"+"
+maptx<-suppressWarnings(trim(flank(maptx,width = width(peak_gr_ok)[maptx$xHits],both = F,start = F,ignore.strand=T)))
+
+
 maptx$score<-peak_gr_ok$ModeScore[maptx$xHits]
 maptx$conv_spec<-peak_gr_ok$conv_spec[maptx$xHits]
 maptx$sequence<-peak_gr_ok$ClusterSequence[maptx$xHits]
@@ -98,7 +129,7 @@ maptx$g_freq<-letterFrequency(maptx$sequence,letters = "G",as.prob = T)*100
 seqlevels(maptx)<-names(GTF_annotation$exons_txs[as.vector(seqnames(txok))])
 seqlengths(maptx)<-sum(width(GTF_annotation$exons_txs[as.vector(seqnames(txok))]))
 
-strand(maptx)<-"+"
+
 tx_st_cds<-start(txok)[match(as.character(seqnames(maptx)),names(txok))]
 tx_end_cds<-end(txok)[match(as.character(seqnames(maptx)),names(txok))]
 tx_wdt<-width(txok)[match(as.character(seqnames(maptx)),names(txok))]
@@ -126,20 +157,20 @@ maptx$tx_class<-mlt$L1[match(as.character(seqnames(maptx)),mlt$tx_id)]
 maptx$tx_class[is.na(maptx$tx_class)]<-"Not_significant"
 maptx$tx_class[as.character(seqnames(maptx))%in%mlt$tx_id[mlt$L1=="TE_down"]]<-"TE_down"
 
-maptx$tx_class_pos<-mlt_pos$L1[match(as.character(seqnames(maptx)),mlt_pos$tx_id)]
-maptx$tx_class_pos[is.na(maptx$tx_class_pos)]<-"Not_significant"
-
 aggg<-aggregate(maptx$conv_spec,list(as.vector(seqnames(maptx))),sum)
 agg_sc<-aggg[,2]
 names(agg_sc)<-aggg[,1]
 maptx$norm_conv_spec<-maptx$conv_spec/agg_sc[as.vector(seqnames(maptx))]
 
-
-aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),sum)
+#normalized score to account for multiple peaks in transcript
+#aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),sum)
+aggg<-aggregate(maptx$score,list(as.vector(seqnames(maptx))),sum)
 agg_sc<-aggg[,2]
 names(agg_sc)<-aggg[,1]
 maptx$norm_cov_sum<-maptx$score/agg_sc[as.vector(seqnames(maptx))]
-aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),max)
+
+#aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),max)
+aggg<-aggregate(maptx$score,list(as.vector(seqnames(maptx))),max)
 agg_sc<-aggg[,2]
 names(agg_sc)<-aggg[,1]
 maptx$norm_cov_01<-maptx$score/agg_sc[as.vector(seqnames(maptx))]
@@ -191,11 +222,11 @@ pdf(file = "figures/aggregate_plot_conv_spec_hist.pdf",width = 8,height = 4)
 histpl + scale_x_continuous(breaks=c(0,.15,.20,.5,1), labels=c(0,.15,.20,.5,1))
 dev.off()
 
-agga2<-aggregate(list(maptx$conv_spec,maptx$norm_cov_sum),by=list(maptx$tx_bin_ok,maptx$tx_class2),mean)
-colnames(agga2)<-c("tx_bin","tx_class","conv_spec","norm_cov_sum")
+agga2<-aggregate(list(maptx$conv_spec,maptx$norm_cov_sum,as.numeric(maptx$g_freq),maptx$score),by=list(maptx$tx_bin_ok,maptx$tx_class2),mean)
+colnames(agga2)<-c("tx_bin","tx_class","conv_spec","norm_cov_sum","gc_pct","score")
 
 conv_specplot<-ggplot(agga2,aes(x=tx_bin,y=conv_spec,group=tx_class,color=tx_class)) + 
-    geom_smooth(method="loess",span=.2,se = T) +  
+    geom_smooth(method="loess",span=.2,se = F) +  
     geom_point(size=.1) + 
     ylab("T>C conversion\nspecificity (average)") +
     xlab("") +
@@ -212,12 +243,11 @@ print(conv_specplot)
 dev.off()
 
 
-agga2<-aggregate(list(maptx$conv_spec,maptx$norm_cov_sum,maptx$gc),by=list(maptx$tx_bin_ok,maptx$tx_class2),mean)
-colnames(agga2)<-c("tx_bin","tx_class","conv_spec","norm_cov_sum","GC")
 
-conv_specplot2<-ggplot(agga2,aes(x=tx_bin,y=conv_spec,group=tx_class,color=tx_class,size=GC)) + 
-    geom_point() + 
-    ylab("T>C conversion\nspecificity (average)") +
+gc_metaplot<-ggplot(agga2,aes(x=tx_bin,y=gc_pct,group=tx_class,color=tx_class)) + 
+    geom_smooth(method="loess",span=.2,se = F) +  
+    geom_point(size=.1) + 
+    ylab("%GC content (average)") +
     xlab("") +
     geom_vline(xintercept =34,col="black",lty=3)+
     scale_color_manual(values = alpha(c("black","cornflowerblue","orange","blue","dark red"),.7),"Tx_class") + 
@@ -227,18 +257,14 @@ conv_specplot2<-ggplot(agga2,aes(x=tx_bin,y=conv_spec,group=tx_class,color=tx_cl
     theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
     theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) +
     scale_x_continuous(breaks=c(0,34,134,200), labels=c("TSS","start codon","stop codon","TES"))
-pdf(file = "/bfd/lcalviel/data/riboseq/DDX3_paper_Markus/RNA_up_correct/conv_spec_tx_class_size.pdf",width = 8,height = 4)
-print(conv_specplot2 + scale_size_continuous(name="%GC content", 
-                                             range = c(0,5), 
-                                             breaks = c(20,40,60,80,90),labels = as.character(c(20,40,60,80,90))))
-
+pdf(file = "figures/gc_tx_class.pdf",width = 8,height = 4)
+print(gc_metaplot)
 dev.off()
 
-
-
-conv_specplot2<-ggplot(agga2,aes(x=tx_bin,y=GC,group=tx_class,color=tx_class,size=conv_spec)) + 
-    geom_point() + 
-    ylab("%GC content\n(average)") +
+score_plot<-ggplot(agga2,aes(x=tx_bin,y=score,group=tx_class,color=tx_class)) + 
+    geom_smooth(method="loess",span=.2,se = F) +  
+    geom_point(size=.1) + 
+    ylab("Peak score (average)") +
     xlab("") +
     geom_vline(xintercept =34,col="black",lty=3)+
     scale_color_manual(values = alpha(c("black","cornflowerblue","orange","blue","dark red"),.7),"Tx_class") + 
@@ -248,46 +274,17 @@ conv_specplot2<-ggplot(agga2,aes(x=tx_bin,y=GC,group=tx_class,color=tx_class,siz
     theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
     theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) +
     scale_x_continuous(breaks=c(0,34,134,200), labels=c("TSS","start codon","stop codon","TES"))
-pdf(file = "figures/conv_spec_GC_tx_class.pdf",width = 8,height = 4)
-print(conv_specplot2 +scale_size_continuous(name="T>C conversion\nspecificity", 
-                                            range = c(0,6), 
-                                            breaks = c(.1,.2,.3,.4,.6,.8,.9),labels = as.character(c(.1,.2,.3,.4,.6,.8,.9))))
-
+pdf(file = "figures/score_tx_class.pdf",width = 8,height = 4)
+print(score_plot)
 dev.off()
 
 
-
-
-agga<-aggregate(list(maptx$norm_cov_sum,maptx$norm_cov_01),by=list(maptx$tx_bin_ok,maptx$tx_class,maptx$conversion_specificity),sum)
-colnames(agga)<-c("tx_bin","tx_class","conv_spec","norm_cov_sum","norm_cov_01")
-
-agga_pos<-aggregate(list(maptx$norm_cov_sum,maptx$norm_cov_01),by=list(maptx$tx_bin_ok,maptx$tx_class_pos,maptx$conversion_specificity),sum)
-colnames(agga_pos)<-c("tx_bin","tx_class","conv_spec","norm_cov_sum","norm_cov_01")
-
-covvs<-agga_pos
-agg_covv<-aggregate(list(covvs$norm_cov_sum,covvs$norm_cov_01),by=list(covvs$tx_class,covvs$conv_spec),sum)
-colnames(agg_covv)<-c("tx_class","conv_spec","norm_cov_sum","norm_cov_01")
-agg_covv$id<-paste(agg_covv$tx_class,agg_covv$conv_spec,sep="_")
-covvs$id<-paste(covvs$tx_class,covvs$conv_spec,sep="_")
-
-covvs$norm_cov_sum_norm<-covvs$norm_cov_sum/agg_covv$norm_cov_sum[match(covvs$id,agg_covv$id)]
-covvs$norm_cov_01_norm<-covvs$norm_cov_01/agg_covv$norm_cov_01[match(covvs$id,agg_covv$id)]
-
-covvs$conv_spec<-factor(covvs$conv_spec,levels=c("low","medium","high"))
-
-agga_all<-aggregate(list(maptx$norm_cov_sum,maptx$norm_cov_01),by=list(maptx$tx_bin_ok,maptx$conversion_specificity),sum)
-colnames(agga_all)<-c("tx_bin","conv_spec","norm_cov_sum","norm_cov_01")
+#use norm_cov_sum
+agga_all<-aggregate(list(maptx$norm_cov_sum,maptx$norm_cov_01,maptx$score),by=list(maptx$tx_bin_ok,maptx$conversion_specificity),sum)
+colnames(agga_all)<-c("tx_bin","conv_spec","norm_cov_sum","norm_cov_01","score")
 covvs<-agga_all
-
-agg_covv<-aggregate(list(covvs$norm_cov_sum,covvs$norm_cov_01),by=list(covvs$conv_spec),sum)
-colnames(agg_covv)<-c("conv_spec","norm_cov_sum","norm_cov_01")
-
-covvs$norm_cov_sum_norm<-covvs$norm_cov_sum/agg_covv$norm_cov_sum[match(covvs$conv_spec,agg_covv$conv_spec)]
-covvs$norm_cov_01_norm<-covvs$norm_cov_01/agg_covv$norm_cov_01[match(covvs$conv_spec,agg_covv$conv_spec)]
-
 covvs$conv_spec<-factor(covvs$conv_spec,levels=c("low","medium","high"))
-
-covpl<-ggplot(covvs,aes(x=tx_bin,y=norm_cov_sum_norm,group=conv_spec,color=conv_spec)) +
+covpl<-ggplot(covvs,aes(x=tx_bin,y=norm_cov_sum,group=conv_spec,color=conv_spec)) +
     geom_vline(xintercept =34,col="black",lty=3)+
     scale_color_manual(values = alpha(c("dark grey","orange","red"),.7),"T>C conversion\nspecificity") + geom_line(size=1.1) +
     geom_vline(xintercept =134,col="black",lty=3)+ 
@@ -302,14 +299,16 @@ pdf(file = "figures/aggregate_plot_conv_spec.pdf",width = 8,height = 4)
 print(covpl)
 dev.off()
 
-names(mcols(gr_peaks_rbps))<-c("RBP","method","cell","score")
-paralyz_hek<-gr_peaks_rbps[gr_peaks_rbps$method=="PAR-CLIP,PARalyzer" & gr_peaks_rbps$cell%in%c("HEK293","HEK293T")]
+
+
+paralyz_hek<-postarpar[postarpar$method=="PAR-CLIP,PARalyzer" & postarpar$cell%in%c("HEK293","HEK293T")]
 
 paralyz_hek<-split(paralyz_hek,paralyz_hek$RBP)
 paralyz_hek<-endoapply(paralyz_hek,sort)
 peak_dd<-peak_gr_ok
+peak_dd$gc_freq<-as.numeric(letterFrequency(peak_dd$ClusterSequence,letters = "GC",as.prob = T)*100)
+mcols(peak_dd)<-mcols(peak_dd)[,c("ClusterID","ReadCount","ConversionEventCount","ModeScore","gc_freq")]
 
-mcols(peak_dd)<-mcols(peak_dd)[,c("ClusterID","ReadCount","ConversionEventCount","ModeScore")]
 colnames(mcols(peak_dd))<-colnames(mcols(paralyz_hek[[1]]))
 peak_dd$RBP<-"DDX3X"
 peak_dd$cell<-"HEK293"
@@ -317,7 +316,11 @@ peak_dd$method<-"PAR-CLIP,PARalyzer"
 
 paralyz_hek[["DDX3X"]]<-peak_dd
 res_clips_meta<-sapply(paralyz_hek,function(x){
-    maptx<-mapToTranscripts(x,transcripts = GTF_annotation$exons_txs[as.vector(seqnames(txok))])
+    
+    maptx<-mapToTranscripts(resize(x,1,fix = "center"),transcripts = GTF_annotation$exons_txs[as.vector(seqnames(txok))])
+    strand(maptx)<-"+"
+    suppressWarnings(maptx<-trim(flank(maptx,width = width(x)[maptx$xHits],both = F,start = F,ignore.strand=T)))
+    maptx<-maptx[width(maptx)>0]
     maptx$score<-x$score[maptx$xHits]
     seqlevels(maptx)<-names(GTF_annotation$exons_txs[as.vector(seqnames(txok))])
     seqlengths(maptx)<-sum(width(GTF_annotation$exons_txs[as.vector(seqnames(txok))]))
@@ -339,11 +342,13 @@ res_clips_meta<-sapply(paralyz_hek,function(x){
     threeutpos<-mid(maptx)>tx_end_cds
     maptx$tx_bin[threeutpos]<-as.integer(((mid(maptx)[threeutpos]-tx_end_cds[threeutpos])/(tx_end_tx[threeutpos]-tx_wdt[threeutpos]))*66)+1
     
-    aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),sum)
+    #aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),sum)
+    aggg<-aggregate(maptx$score,list(as.vector(seqnames(maptx))),sum)
     agg_sc<-aggg[,2]
     names(agg_sc)<-aggg[,1]
     maptx$norm_cov_sum<-maptx$score/agg_sc[as.vector(seqnames(maptx))]
-    aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),max)
+    #aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),max)
+    aggg<-aggregate(maptx$score,list(as.vector(seqnames(maptx))),max)
     agg_sc<-aggg[,2]
     names(agg_sc)<-aggg[,1]
     maptx$norm_cov_01<-maptx$score/agg_sc[as.vector(seqnames(maptx))]
@@ -403,13 +408,49 @@ print(covpl)
 dev.off()
 
 
+gr_peaks_rbps<-unlist(paralyz_hek)
 
-eclips<-gr_peaks_rbps[gr_peaks_rbps$method=="eCLIP"]
+cor_sp_gc <- by(gr_peaks_rbps[,c("score","gc_freq")], gr_peaks_rbps$RBP, function(x) {cor(x$score, x$gc_freq,method = "sp")})
+cor_pe_gc <- by(gr_peaks_rbps[,c("score","gc_freq")], gr_peaks_rbps$RBP, function(x) {cor(x$score, x$gc_freq,method = "pe")})
+
+dfs<-melt(sort(unlist(cor_sp_gc),decreasing = T))
+dfs$type<-"Spearman"
+dfs2<-melt(sort(unlist(cor_pe_gc),decreasing = T))
+dfs2$type<-"Pearson"
+dfs<-rbind(dfs,dfs2)
+colnames(dfs)<-c("RBP","value","type")
+
+
+dfs$RBP<-factor(dfs$RBP,levels = sort(unique(as.character(dfs$RBP))))
+
+rbips<-sort(unique(dfs$RBP))
+ddlab <- ifelse(rbips%in%c("DDX3X"), "red", "black")
+names(ddlab)<-NULL
+plotrbpcorr_gc<-ggplot(dfs,aes(y=value,x=RBP,fill=RBP)) + geom_bar(stat="identity") + facet_wrap(type~.,ncol = 1) + 
+    scale_fill_manual(values = ddlab) +theme_bw() +
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=45, vjust=0.5, size=15,colour = ddlab)) +
+    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
+    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="darkkhaki"))
+plotrbpcorr_gc<-plotrbpcorr_gc + theme(legend.position="none") + ylab("Correlation PEAK score - %GC content")
+
+
+pdf(file = "figures/all_parclip_scores_gc.pdf",width = 17,height =8)
+print(plotrbpcorr_gc)
+dev.off()
+
+
+eclips<-postareclip
 
 eclips$id<-paste(eclips$RBP,eclips$cell,sep=";")
 eclips<-split(eclips,eclips$id)
 res_eclips_meta<-sapply(eclips,function(x){
-    maptx<-mapToTranscripts(resize(x,1,"center"),transcripts = GTF_annotation$exons_txs[as.vector(seqnames(txok))])
+    #maptx<-mapToTranscripts(resize(x,1,"center"),transcripts = GTF_annotation$exons_txs[as.vector(seqnames(txok))])
+    
+    maptx<-mapToTranscripts(resize(x,1,fix = "center"),transcripts = GTF_annotation$exons_txs[as.vector(seqnames(txok))])
+    strand(maptx)<-"+"
+    maptx<-trim(flank(maptx,width = width(x)[maptx$xHits],both = F,start = F,ignore.strand=T))
+    maptx<-maptx[width(maptx)>0]
+    
     maptx$score<-x$score[maptx$xHits]
     seqlevels(maptx)<-names(GTF_annotation$exons_txs[as.vector(seqnames(txok))])
     seqlengths(maptx)<-sum(width(GTF_annotation$exons_txs[as.vector(seqnames(txok))]))
@@ -431,11 +472,13 @@ res_eclips_meta<-sapply(eclips,function(x){
     threeutpos<-mid(maptx)>tx_end_cds
     maptx$tx_bin[threeutpos]<-as.integer(((mid(maptx)[threeutpos]-tx_end_cds[threeutpos])/(tx_end_tx[threeutpos]-tx_wdt[threeutpos]))*66)+1
     
-    aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),sum)
+    #aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),sum)
+    aggg<-aggregate(maptx$score,list(as.vector(seqnames(maptx))),sum)
     agg_sc<-aggg[,2]
     names(agg_sc)<-aggg[,1]
     maptx$norm_cov_sum<-maptx$score/agg_sc[as.vector(seqnames(maptx))]
-    aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),max)
+    #aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),max)
+    aggg<-aggregate(maptx$score,list(as.vector(seqnames(maptx))),max)
     agg_sc<-aggg[,2]
     names(agg_sc)<-aggg[,1]
     maptx$norm_cov_01<-maptx$score/agg_sc[as.vector(seqnames(maptx))]
@@ -538,6 +581,235 @@ tabla$category<-gsub(rownames(tabla),pattern = "\n",replacement = " ")
 tabla<-tabla[,c("category","all_genes","RNA_up","RNA_down","TE_up","TE_down")]
 rownames(tabla)<-NULL
 write.table(tabla,file = "data/table_bound_genes.csv",sep="\t",quote = FALSE,row.names = FALSE)
+
+
+#wavcluster
+
+
+peak_gr_ok<-list_wavres$wavclusters
+peak_gr_ok<-peak_gr_ok[peak_gr_ok$CrossLinkEff!=Inf]
+peak_gr_ok$score<-peak_gr_ok$RelLogOdds
+peak_gr_ok$conv_spec<-peak_gr_ok$CrossLinkEff
+
+peak_gr_ok$region<-"undefined"
+for(i in rev(names(regions))){
+    peak_gr_ok$region[peak_gr_ok%over%regions[[i]]]<-i
+}
+
+ddd<-data.frame(mcols(peak_gr_ok))
+ddd$regions<-factor(ddd$region,levels = names(regions))
+colssi<-c("red","orange","gold","cornflowerblue","blue","dark blue")
+barpeaks<-ggplot(ddd,aes(x=regions,fill=regions)) + geom_bar() +
+    scale_fill_manual(values = colssi) +
+    theme_classic() +
+    ylab("Number of peaks\n(wavClusteR)") +
+    xlab("") +
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=45, vjust=0.5, size=15)) +
+    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
+    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) + 
+    theme(legend.position="none")
+
+pdf(file = "figures/wavcl_peak_stats_ddx3.pdf",width = 8,height = 4)
+print(barpeaks)
+dev.off()
+
+#mRNA BINDING
+
+maptx<-mapToTranscripts(resize(peak_gr_ok,1,fix = "center"),transcripts = GTF_annotation$exons_txs[as.vector(seqnames(txok))])
+strand(maptx)<-"+"
+maptx<-suppressWarnings(trim(flank(maptx,width = width(peak_gr_ok)[maptx$xHits],both = F,start = F,ignore.strand=T)))
+
+mcols(maptx)<-mcols(peak_gr_ok)[maptx$xHits,]
+maptx$sequence<-maptx$Sequence
+maptx$gc<-letterFrequency(maptx$sequence,letters = "GC",as.prob = T)*100
+maptx$c_freq<-letterFrequency(maptx$sequence,letters = "C",as.prob = T)*100
+maptx$g_freq<-letterFrequency(maptx$sequence,letters = "G",as.prob = T)*100
+
+seqlevels(maptx)<-names(GTF_annotation$exons_txs[as.vector(seqnames(txok))])
+seqlengths(maptx)<-sum(width(GTF_annotation$exons_txs[as.vector(seqnames(txok))]))
+
+
+tx_st_cds<-start(txok)[match(as.character(seqnames(maptx)),names(txok))]
+tx_end_cds<-end(txok)[match(as.character(seqnames(maptx)),names(txok))]
+tx_wdt<-width(txok)[match(as.character(seqnames(maptx)),names(txok))]
+tx_end_tx<-seqlengths(txok)[match(as.character(seqnames(maptx)),names(seqlengths(txok)))]
+
+maptx$tx_position<-"5_UTR"
+maptx$tx_position[mid(maptx)>=tx_st_cds]<-"CDS"
+maptx$tx_position[mid(maptx)>tx_end_cds]<-"3_UTR"
+
+
+maptx$tx_bin<-as.integer((mid(maptx)/(tx_st_cds))*33)+1
+cdspos<-mid(maptx)>=tx_st_cds & mid(maptx)<=tx_end_cds
+maptx$tx_bin[cdspos]<-as.integer(((mid(maptx)[cdspos]-tx_st_cds[cdspos])/(tx_wdt[cdspos]))*100)+1
+threeutpos<-mid(maptx)>tx_end_cds
+maptx$tx_bin[threeutpos]<-as.integer(((mid(maptx)[threeutpos]-tx_end_cds[threeutpos])/(tx_end_tx[threeutpos]-tx_wdt[threeutpos]))*66)+1
+
+
+mlt<-melt(list_DE_genes)
+nnnms<-GTF_annotation$trann$gene_name[match(mlt$value,GTF_annotation$trann$gene_id)]
+mlt$L1[intersect(which(mlt$L1=="TE_up"),grep(nnnms,pattern = "HIST|H2B"))]<-"TE_up_Hist"
+mlt$L1[intersect(which(mlt$L1=="TE_up"),grep(nnnms,pattern = "HIST|H2B",invert = T))]<-"TE_up_noHist"
+mlt$tx_id<-as.character(seqnames(txok))[match(mlt$value,txok$gene_id)]
+mlt_pos<-mlt[mlt$L1%in%c("five_up","five_down"),]
+maptx$tx_class<-mlt$L1[match(as.character(seqnames(maptx)),mlt$tx_id)]
+maptx$tx_class[is.na(maptx$tx_class)]<-"Not_significant"
+maptx$tx_class[as.character(seqnames(maptx))%in%mlt$tx_id[mlt$L1=="TE_down"]]<-"TE_down"
+
+aggg<-aggregate(maptx$conv_spec,list(as.vector(seqnames(maptx))),sum)
+agg_sc<-aggg[,2]
+names(agg_sc)<-aggg[,1]
+maptx$norm_conv_spec<-maptx$conv_spec/agg_sc[as.vector(seqnames(maptx))]
+
+#normalized score to account for multiple peaks in transcript
+#aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),sum)
+aggg<-aggregate(maptx$score,list(as.vector(seqnames(maptx))),sum)
+agg_sc<-aggg[,2]
+names(agg_sc)<-aggg[,1]
+maptx$norm_cov_sum<-maptx$score/agg_sc[as.vector(seqnames(maptx))]
+
+#aggg<-aggregate(maptx$score*width(maptx),list(as.vector(seqnames(maptx))),max)
+aggg<-aggregate(maptx$score,list(as.vector(seqnames(maptx))),max)
+agg_sc<-aggg[,2]
+names(agg_sc)<-aggg[,1]
+maptx$norm_cov_01<-maptx$score/agg_sc[as.vector(seqnames(maptx))]
+
+maptx$tx_bin_ok<-maptx$tx_bin
+
+maptx$tx_bin_ok[maptx$tx_position=="CDS"]<-maptx$tx_bin[maptx$tx_position=="CDS"]+33
+maptx$tx_bin_ok[maptx$tx_position=="3_UTR"]<-maptx$tx_bin[maptx$tx_position=="3_UTR"]+133
+
+maptx$conversion_specificity<-"low"
+maptx$conversion_specificity[maptx$conv_spec>=0.67 & maptx$conv_spec<=0.90]<-"medium"
+maptx$conversion_specificity[maptx$conv_spec>0.90]<-"high"
+maptx$tx_class2<-maptx$tx_class
+maptx$tx_class2[grep(maptx$tx_class2,pattern = "TE_up")]<-"TE_up"
+
+
+
+dfs<-as.data.frame(mcols(maptx))
+dfs$tx_position<-factor(dfs$tx_position,levels=c("5_UTR","CDS","3_UTR"))
+d<-ggplot(dfs,aes(conv_spec,G.C))+ 
+    geom_hex(bins = 50) +
+    ylab("%GC content") +
+    xlab("Crosslinking efficiency\nwavClusteR") +
+    theme_classic() +
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=45, vjust=0.5, size=15)) +
+    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
+    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white"))
+pdf(file = "figures/wavcl_par_clip_xlink_gc.pdf",width = 5,height = 4)
+print(d +scale_fill_viridis_c())
+dev.off()
+
+dfs<-as.data.frame(mcols(maptx))
+dfs$tx_position<-factor(dfs$tx_position,levels=c("5_UTR","CDS","3_UTR"))
+d<-ggplot(dfs,aes(score,G.C))+ 
+    geom_hex(bins = 50) +
+    ylab("%GC content") +
+    xlab("Peak score\nwavClusteR") +
+    theme_classic() +
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=45, vjust=0.5, size=15)) +
+    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
+    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white"))
+pdf(file = "figures/wavcl_par_clip_score_gc.pdf",width = 5,height = 4)
+print(d +scale_fill_viridis_c())
+dev.off()
+
+
+dddf<-data.frame(mcols(maptx))
+dddf$conversion_specificity<-factor(dddf$conversion_specificity,levels=c("low","medium","high"))
+
+histpl<-ggplot(dddf,aes(x=conv_spec,fill=conversion_specificity)) + geom_histogram(bins = 1000) +
+    geom_vline(xintercept =0.67,col="black",lty=3)+
+    scale_color_manual(values = alpha(c("dark grey","orange","red"),.7),"") +
+    scale_fill_manual(values = alpha(c("dark grey","orange","red"),.7),"") +
+    geom_vline(xintercept =0.90,col="black",lty=3)+ 
+    theme_classic() +
+    ylab("count") +
+    xlab("Crosslinking efficiency\nwavClusteR") +
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=45, vjust=0.5, size=15)) +
+    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
+    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white"))
+pdf(file = "figures/wavcl_aggregate_plot_conv_spec_hist.pdf",width = 8,height = 4)
+histpl + scale_x_continuous(breaks=c(0,0.67,0.90,5), labels=c(0,.15,.20,5))
+dev.off()
+
+agga2<-aggregate(list(maptx$conv_spec,maptx$norm_cov_sum,as.numeric(maptx$g_freq),maptx$score),by=list(maptx$tx_bin_ok,maptx$tx_class2),mean)
+colnames(agga2)<-c("tx_bin","tx_class","conv_spec","norm_cov_sum","gc_pct","score")
+
+conv_specplot<-ggplot(agga2,aes(x=tx_bin,y=conv_spec,group=tx_class,color=tx_class)) + 
+    geom_smooth(method="loess",span=.2,se = F) +  
+    geom_point(size=.1) + 
+    ylab("Crosslinking efficiency\n(average)\nwavClusteR") +
+    xlab("") +
+    geom_vline(xintercept =34,col="black",lty=3)+
+    scale_color_manual(values = alpha(c("black","cornflowerblue","orange","blue","dark red"),.7),"Tx_class") + 
+    geom_vline(xintercept =134,col="black",lty=3)+ 
+    theme_classic() +
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=0, vjust=0.5, size=13)) +
+    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
+    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) +
+    scale_x_continuous(breaks=c(0,34,134,200), labels=c("TSS","start codon","stop codon","TES"))
+pdf(file = "figures/wavcl_conv_spec_tx_class.pdf",width = 8,height = 4)
+print(conv_specplot)
+dev.off()
+
+
+
+gc_metaplot<-ggplot(agga2,aes(x=tx_bin,y=gc_pct,group=tx_class,color=tx_class)) + 
+    geom_smooth(method="loess",span=.2,se = F) +  
+    geom_point(size=.1) + 
+    ylab("%GC content (average)\nwavClusteR") +
+    xlab("") +
+    geom_vline(xintercept =34,col="black",lty=3)+
+    scale_color_manual(values = alpha(c("black","cornflowerblue","orange","blue","dark red"),.7),"Tx_class") + 
+    geom_vline(xintercept =134,col="black",lty=3)+ 
+    theme_classic() +
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=0, vjust=0.5, size=13)) +
+    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
+    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) +
+    scale_x_continuous(breaks=c(0,34,134,200), labels=c("TSS","start codon","stop codon","TES"))
+pdf(file = "figures/wavcl_gc_tx_class.pdf",width = 8,height = 4)
+print(gc_metaplot)
+dev.off()
+
+score_plot<-ggplot(agga2,aes(x=tx_bin,y=score,group=tx_class,color=tx_class)) + 
+    geom_smooth(method="loess",span=.2,se = F) +  
+    geom_point(size=.1) + 
+    ylab("Peak score (average)\nwavClusteR") +
+    xlab("") +
+    geom_vline(xintercept =34,col="black",lty=3)+
+    scale_color_manual(values = alpha(c("black","cornflowerblue","orange","blue","dark red"),.7),"Tx_class") + 
+    geom_vline(xintercept =134,col="black",lty=3)+ 
+    theme_classic() +
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=0, vjust=0.5, size=13)) +
+    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
+    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) +
+    scale_x_continuous(breaks=c(0,34,134,200), labels=c("TSS","start codon","stop codon","TES"))
+pdf(file = "figures/wavcl_score_tx_class.pdf",width = 8,height = 4)
+print(score_plot)
+dev.off()
+
+
+#use norm_cov_sum
+agga_all<-aggregate(list(maptx$norm_cov_sum,maptx$norm_cov_01,maptx$score),by=list(maptx$tx_bin_ok,maptx$conversion_specificity),sum)
+colnames(agga_all)<-c("tx_bin","conv_spec","norm_cov_sum","norm_cov_01","score")
+covvs<-agga_all
+covvs$conv_spec<-factor(covvs$conv_spec,levels=c("low","medium","high"))
+covpl<-ggplot(covvs,aes(x=tx_bin,y=norm_cov_sum,group=conv_spec,color=conv_spec)) +
+    geom_vline(xintercept =34,col="black",lty=3)+
+    scale_color_manual(values = alpha(c("dark grey","orange","red"),.7),"Crosslinking\nefficiency") + geom_line(size=1.1) +
+    geom_vline(xintercept =134,col="black",lty=3)+ 
+    theme_classic() +
+    ylab("Aggregate\nPAR-CLIP peak score\nwavClusteR") +
+    xlab("") +
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=0, vjust=0.5, size=13)) +
+    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
+    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) +
+    scale_x_continuous(breaks=c(0,34,134,200), labels=c("TSS","start codon","stop codon","TES"))
+pdf(file = "figures/wavcl_aggregate_plot_conv_spec.pdf",width = 8,height = 4)
+print(covpl)
+dev.off()
 
 
 #rRNA
@@ -851,9 +1123,9 @@ gstr<-ggplot(df,aes(x=position,y=value,group=L1,color=L1)) +
     xlab("5'UTR position (nt)") +
     scale_color_manual(values = alpha(c("black","cornflowerblue","orange","blue","dark red"),.7),"Tx_class") + 
     theme_classic() +
-    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=0, vjust=0.5, size=13)) +
-    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
-    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) 
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=0, vjust=0.5, size=18)) +
+    theme(axis.title.y = element_text(size=22),axis.text.y  = element_text(angle=0, vjust=0.5, size=18))  +
+    theme(strip.text.x = element_text(size=22, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) 
 cairo_pdf(file = "figures/avg_deltaG_5utrs.pdf",width = 11,height = 5)
 print(gstr)
 dev.off()
@@ -888,9 +1160,9 @@ gstr_bins<-ggplot(df,aes(x=position,y=value,group=L1,color=L1)) +
     scale_x_continuous(breaks=c(1,20,40,60,80,100), labels=c("TSS","20","40","60","80","start codon"))+
     scale_color_manual(values = alpha(c("black","cornflowerblue","orange","blue","dark red"),.7),"Tx_class") + 
     theme_classic() +
-    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=0, vjust=0.5, size=13)) +
-    theme(axis.title.y = element_text(size=18),axis.text.y  = element_text(angle=0, vjust=0.5, size=15))  +
-    theme(strip.text.x = element_text(size=10, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) 
+    theme(axis.title.x = element_text(size=22),axis.text.x  = element_text(angle=0, vjust=0.5, size=22)) +
+    theme(axis.title.y = element_text(size=22),axis.text.y  = element_text(angle=0, vjust=0.5, size=22))  +
+    theme(strip.text.x = element_text(size=22, face="bold"),strip.text.y = element_text(size=24),strip.background = element_rect(colour="black", fill="white")) 
 cairo_pdf(file = "figures/avg_deltaG_5utrs_bins.pdf",width = 11,height = 5)
 print(gstr_bins)
 dev.off()
