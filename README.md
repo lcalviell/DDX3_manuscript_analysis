@@ -1,4 +1,6 @@
 
+### OUTDATED ###
+
 Here it is a collection of data, scripts and plots for our manuscript about DDX3 functions in HEK293 cells:
 
 ### DDX3 depletion selectively represses translation of structured mRNAs ###
